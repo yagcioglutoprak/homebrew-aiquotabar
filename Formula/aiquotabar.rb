@@ -1,13 +1,17 @@
 class Aiquotabar < Formula
-  desc "macOS menu bar app showing live Claude.ai and ChatGPT usage limits"
+  desc "Live Claude, ChatGPT, Cursor and Copilot usage limits in the macOS menu bar"
   homepage "https://github.com/yagcioglutoprak/AIQuotaBar"
-  url "https://github.com/yagcioglutoprak/AIQuotaBar/archive/refs/tags/v1.1.0.tar.gz"
-  sha256 "9c875f01e4891e4483640abcf1447e172dcf66ddfc49f46df91187ea19c4f5ff"
+  url "https://github.com/yagcioglutoprak/AIQuotaBar/archive/refs/tags/v2.0.0.tar.gz"
+  sha256 "ad44ad4d8315d6d4747c5d8c5ea68ba602853ed6241227a4354d8329d227fab5"
   license "MIT"
   head "https://github.com/yagcioglutoprak/AIQuotaBar.git", branch: "main"
 
-  depends_on macos: :monterey
+  depends_on macos: :sonoma
   depends_on "python@3.12"
+
+  on_intel do
+    depends_on macos: :sequoia
+  end
 
   resource "certifi" do
     url "https://files.pythonhosted.org/packages/af/2d/7bf41579a8986e348fa033a31cdd0e4121114f6bce2457e8876010b092dd/certifi-2026.2.25.tar.gz"
@@ -19,9 +23,17 @@ class Aiquotabar < Formula
     sha256 "44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529"
   end
 
+  # Wheels, not the sdist: the 0.14.0 sdist hard-codes a GitHub Actions path
+  # (/Users/runner/work/_temp) for libcurl-impersonate, so it cannot build on a Mac.
   resource "curl-cffi" do
-    url "https://files.pythonhosted.org/packages/9b/c9/0067d9a25ed4592b022d4558157fcdb6e123516083700786d38091688767/curl_cffi-0.14.0.tar.gz"
-    sha256 "5ffbc82e59f05008ec08ea432f0e535418823cda44178ee518906a54f27a5f0f"
+    on_arm do
+      url "https://files.pythonhosted.org/packages/aa/f0/0f21e9688eaac85e705537b3a87a5588d0cefb2f09d83e83e0e8be93aa99/curl_cffi-0.14.0-cp39-abi3-macosx_14_0_arm64.whl"
+      sha256 "e35e89c6a69872f9749d6d5fda642ed4fc159619329e99d577d0104c9aad5893"
+    end
+    on_intel do
+      url "https://files.pythonhosted.org/packages/ba/a3/0419bd48fce5b145cb6a2344c6ac17efa588f5b0061f212c88e0723da026/curl_cffi-0.14.0-cp39-abi3-macosx_15_0_x86_64.whl"
+      sha256 "5945478cd28ad7dfb5c54473bcfb6743ee1d66554d57951fdf8fc0e7d8cf4e45"
+    end
   end
 
   resource "lz4" do
@@ -49,6 +61,11 @@ class Aiquotabar < Formula
     sha256 "5556c87db95711b985d5efdaaf01c917ddd41d148b1e52a0c66b1a2e2c5c1640"
   end
 
+  resource "pyobjc-framework-webkit" do
+    url "https://files.pythonhosted.org/packages/14/10/110a50e8e6670765d25190ca7f7bfeecc47ec4a8c018cb928f4f82c56e04/pyobjc_framework_webkit-12.1.tar.gz"
+    sha256 "97a54dd05ab5266bd4f614e41add517ae62cdd5a30328eabb06792474b37d82a"
+  end
+
   resource "browser-cookie3" do
     url "https://files.pythonhosted.org/packages/e0/e1/652adea0ce25948e613ef78294c8ceaf4b32844aae00680d3a1712dde444/browser_cookie3-0.20.1.tar.gz"
     sha256 "6d8d0744bf42a5327c951bdbcf77741db3455b8b4e840e18bab266d598368a12"
@@ -67,12 +84,19 @@ class Aiquotabar < Formula
     ENV["HOME"] = buildpath
 
     resources.each do |r|
+      if r.name == "curl-cffi"
+        # pip only accepts a wheel under its real file name.
+        wheel = buildpath/File.basename(r.url)
+        cp r.fetch, wheel
+        system venv/"bin/pip", "install", "--no-deps", wheel
+        next
+      end
       r.stage do
         system venv/"bin/pip", "install", "--no-deps", "."
       end
     end
 
-    libexec.install "claude_bar.py"
+    libexec.install "claude_bar.py", "aiquotabar"
     (libexec/"assets").install Dir["assets/*"]
 
     # Fix rumps notification crash (requires CFBundleIdentifier in Info.plist)
@@ -101,6 +125,9 @@ class Aiquotabar < Formula
   end
 
   test do
+    # The test sandbox cannot write __pycache__ into the Cellar.
+    ENV["PYTHONPYCACHEPREFIX"] = testpath/"pycache"
     system "#{libexec}/venv/bin/python", "-m", "py_compile", "#{libexec}/claude_bar.py"
+    assert_match "AIQuotaBar", shell_output("#{bin}/aiquotabar --version")
   end
 end
