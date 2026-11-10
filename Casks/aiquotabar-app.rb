@@ -8,15 +8,14 @@ cask "aiquotabar-app" do
   homepage "https://github.com/yagcioglutoprak/AIQuotaBar"
 
   depends_on formula: "yagcioglutoprak/aiquotabar/aiquotabar"
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "AIQuotaBar.app"
 
-  preflight do
+  preflight_steps do
     # The formula builds the native bundle and manages its Python dependencies.
     # Use its stable opt path so formula upgrades do not break the launcher.
-    source = Formula["yagcioglutoprak/aiquotabar/aiquotabar"].opt_prefix/"AIQuotaBar.app"
-    FileUtils.cp_r source, staged_path/"AIQuotaBar.app"
+    copy "{{HOMEBREW_PREFIX}}/opt/aiquotabar/AIQuotaBar.app", "AIQuotaBar.app", recursive: true
   end
 
   caveats <<~EOS
