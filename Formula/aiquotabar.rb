@@ -179,7 +179,7 @@ class Aiquotabar < Formula
         <key>CFBundlePackageType</key><string>APPL</string>
         <key>CFBundleShortVersionString</key><string>#{version}</string>
         <key>CFBundleVersion</key><string>#{revision}</string>
-        <key>LSMinimumSystemVersion</key><string>#{MacOSVersion.new(:sonoma)}</string>
+        <key>LSMinimumSystemVersion</key><string>14.0</string>
         <key>LSUIElement</key><true/>
         <key>NSHighResolutionCapable</key><true/>
         <key>CFBundleIconFile</key><string>AIQuotaBar.icns</string>
