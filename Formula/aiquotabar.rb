@@ -1,3 +1,5 @@
+require "etc"
+
 class Aiquotabar < Formula
   desc "Live Claude, ChatGPT, Cursor and Copilot usage limits in the macOS menu bar"
   homepage "https://github.com/yagcioglutoprak/AIQuotaBar"
@@ -7,7 +9,7 @@ class Aiquotabar < Formula
   revision 3
   head "https://github.com/yagcioglutoprak/AIQuotaBar.git", branch: "main"
 
-  option "with-system-rust", "Build the launcher with the existing compiler specified by RUSTC"
+  option "with-system-rust", "Build the launcher with an existing Rustup toolchain"
 
   depends_on macos: :sonoma
   depends_on "python@3.12"
@@ -86,6 +88,14 @@ class Aiquotabar < Formula
   end
 
   def install
+    rustc = "rustc"
+    if build.with?("system-rust")
+      user_home = Pathname.new(Etc.getpwuid.dir)
+      ENV["RUSTUP_HOME"] ||= (user_home/".rustup").to_s
+      cargo_home = Pathname.new(ENV.fetch("CARGO_HOME", (user_home/".cargo").to_s))
+      rustc = cargo_home/"bin/rustc"
+    end
+
     venv = libexec/"venv"
     system "python3.12", "-m", "venv", venv
 
@@ -155,7 +165,6 @@ class Aiquotabar < Formula
       }
     RUST
     python_framework = Formula["python@3.12"].opt_frameworks/"Python.framework/Versions/3.12/Python"
-    rustc = build.with?("system-rust") ? ENV.fetch("RUSTC") : "rustc"
     system rustc, "--edition=2024", "-C", "opt-level=s", "-C", "strip=symbols",
            "-C", "link-arg=#{python_framework}", "launcher.rs",
            "-o", contents/"MacOS/AIQuotaBar"

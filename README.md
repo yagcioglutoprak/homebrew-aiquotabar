@@ -17,6 +17,6 @@ To remove the Applications entry:
 brew uninstall --cask yagcioglutoprak/aiquotabar/aiquotabar-app
 ```
 
-The formula uses the publisher's checksum-verified Python 3.12 universal PyObjC wheels and the native build cache for wheel resources. Rust is a build dependency for the small native launcher; it is not needed by the running app. If you already have a compatible stable Rust compiler, install the formula first with `RUSTC="$(rustup which rustc)" brew install --with-system-rust yagcioglutoprak/aiquotabar/aiquotabar` to reuse it before installing the cask.
+The formula uses the publisher's checksum-verified Python 3.12 universal PyObjC wheels and the native build cache for wheel resources. Rust is a build dependency for the small native launcher; it is not needed by the running app. If you already have a compatible stable Rust compiler, install the formula first with `brew install --with-system-rust yagcioglutoprak/aiquotabar/aiquotabar` to reuse it before installing the cask.
 
 Packaging status is recorded in [PROGRESS.md](PROGRESS.md), with maintenance notes in [docs/HANDOFF.md](docs/HANDOFF.md).
