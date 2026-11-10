@@ -92,8 +92,8 @@ class Aiquotabar < Formula
     if build.with?("system-rust")
       user_home = Pathname.new(Etc.getpwuid.dir)
       ENV["RUSTUP_HOME"] ||= (user_home/".rustup").to_s
-      cargo_home = Pathname.new(ENV.fetch("CARGO_HOME", (user_home/".cargo").to_s))
-      rustc = cargo_home/"bin/rustc"
+      # Homebrew rewrites CARGO_HOME to its cache, which has no Rustup shims.
+      rustc = user_home/".cargo/bin/rustc"
     end
 
     venv = libexec/"venv"
