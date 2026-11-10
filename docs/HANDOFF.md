@@ -1,0 +1,7 @@
+# Packaging maintenance
+
+The runtime formula and `aiquotabar-app` cask intentionally have distinct tokens. Keep the cask's comma-separated bundle revision synchronized with formula revisions that change the bundle. The cask downloads the same checksum-pinned source archive, then stages the bundle built by its formula dependency. No Python installation or source compilation occurs in the cask hooks.
+
+The launcher links the formula's Python framework and passes the virtual environment's Python path to `Py_BytesMain`, preserving package resolution and the process's native bundle identity. The bundle points to the formula's stable opt location, so replacing a Cellar version does not leave a stale runtime path. Removing the cask preserves private app settings and does not stop an existing user-owned app process automatically.
+
+The locally installed formula also has a separate ChatGPT authentication patch. That unrelated provider change is excluded from this packaging contribution. Local packaging checks apply to the same launcher/cask implementation; no native menu interaction or Intel runtime has been observed. Remaining acceptance: observe the menu panel, then qualify any architecture not checked locally.
