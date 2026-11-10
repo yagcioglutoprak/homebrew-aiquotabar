@@ -1,16 +1,27 @@
+require "etc"
+
 class Aiquotabar < Formula
   desc "Live Claude, ChatGPT, Cursor and Copilot usage limits in the macOS menu bar"
   homepage "https://github.com/yagcioglutoprak/AIQuotaBar"
   url "https://github.com/yagcioglutoprak/AIQuotaBar/archive/refs/tags/v2.0.0.tar.gz"
   sha256 "ad44ad4d8315d6d4747c5d8c5ea68ba602853ed6241227a4354d8329d227fab5"
   license "MIT"
+  revision 3
   head "https://github.com/yagcioglutoprak/AIQuotaBar.git", branch: "main"
+
+  option "with-system-rust", "Build the launcher with an existing Rustup toolchain"
 
   depends_on macos: :sonoma
   depends_on "python@3.12"
+  depends_on "rust" => :build unless build.with?("system-rust")
 
   on_intel do
     depends_on macos: :sequoia
+  end
+
+  resource "app-icon" do
+    url "https://raw.githubusercontent.com/yagcioglutoprak/AIQuotaBar/f91aeb3d68b0c762c87bc4bffaeeb2669508136f/assets/logo.png"
+    sha256 "625d9836a37f28eff5eda50443bc81ee67feb010cc7bd688b44b003a3f893523"
   end
 
   resource "certifi" do
@@ -52,18 +63,18 @@ class Aiquotabar < Formula
   end
 
   resource "pyobjc-core" do
-    url "https://files.pythonhosted.org/packages/b8/b6/d5612eb40be4fd5ef88c259339e6313f46ba67577a95d86c3470b951fce0/pyobjc_core-12.1.tar.gz"
-    sha256 "2bb3903f5387f72422145e1466b3ac3f7f0ef2e9960afa9bcd8961c5cbf8bd21"
+    url "https://files.pythonhosted.org/packages/64/5a/6b15e499de73050f4a2c88fff664ae154307d25dc04da8fb38998a428358/pyobjc_core-12.1-cp312-cp312-macosx_10_13_universal2.whl"
+    sha256 "818bcc6723561f207e5b5453efe9703f34bc8781d11ce9b8be286bb415eb4962"
   end
 
   resource "pyobjc-framework-cocoa" do
-    url "https://files.pythonhosted.org/packages/02/a3/16ca9a15e77c061a9250afbae2eae26f2e1579eb8ca9462ae2d2c71e1169/pyobjc_framework_cocoa-12.1.tar.gz"
-    sha256 "5556c87db95711b985d5efdaaf01c917ddd41d148b1e52a0c66b1a2e2c5c1640"
+    url "https://files.pythonhosted.org/packages/95/bf/ee4f27ec3920d5c6fc63c63e797c5b2cc4e20fe439217085d01ea5b63856/pyobjc_framework_cocoa-12.1-cp312-cp312-macosx_10_13_universal2.whl"
+    sha256 "547c182837214b7ec4796dac5aee3aa25abc665757b75d7f44f83c994bcb0858"
   end
 
   resource "pyobjc-framework-webkit" do
-    url "https://files.pythonhosted.org/packages/14/10/110a50e8e6670765d25190ca7f7bfeecc47ec4a8c018cb928f4f82c56e04/pyobjc_framework_webkit-12.1.tar.gz"
-    sha256 "97a54dd05ab5266bd4f614e41add517ae62cdd5a30328eabb06792474b37d82a"
+    url "https://files.pythonhosted.org/packages/db/67/64920c8d201a7fc27962f467c636c4e763b43845baba2e091a50a97a5d52/pyobjc_framework_webkit-12.1-cp312-cp312-macosx_10_13_universal2.whl"
+    sha256 "af2c7197447638b92aafbe4847c063b6dd5e1ed83b44d3ce7e71e4c9b042ab5a"
   end
 
   resource "browser-cookie3" do
@@ -77,6 +88,14 @@ class Aiquotabar < Formula
   end
 
   def install
+    rustc = "rustc"
+    if build.with?("system-rust")
+      user_home = Pathname.new(Etc.getpwuid.dir)
+      ENV["RUSTUP_HOME"] ||= (user_home/".rustup").to_s
+      # Homebrew rewrites CARGO_HOME to its cache, which has no Rustup shims.
+      rustc = user_home/".cargo/bin/rustc"
+    end
+
     venv = libexec/"venv"
     system "python3.12", "-m", "venv", venv
 
@@ -84,10 +103,15 @@ class Aiquotabar < Formula
     ENV["HOME"] = buildpath
 
     resources.each do |r|
-      if r.name == "curl-cffi"
+      next if r.name == "app-icon"
+
+      if r.url.end_with?(".whl")
         # pip only accepts a wheel under its real file name.
         wheel = buildpath/File.basename(r.url)
-        cp r.fetch, wheel
+        # Homebrew fetches resources before entering its network-restricted build.
+        # Reuse and verify that artifact instead of fetching it again here.
+        r.verify_download_integrity(r.cached_download)
+        cp r.cached_download, wheel
         system venv/"bin/pip", "install", "--no-deps", wheel
         next
       end
@@ -111,12 +135,79 @@ class Aiquotabar < Formula
       exec "#{venv}/bin/python" "#{libexec}/claude_bar.py" "$@"
     SH
     chmod 0755, bin/"aiquotabar"
+
+    # Keep the GUI process inside its own macOS bundle instead of exec'ing Python.
+    app = prefix/"AIQuotaBar.app"
+    contents = app/"Contents"
+    (contents/"MacOS").mkpath
+    (contents/"Resources").mkpath
+    (buildpath/"launcher.rs").write <<~RUST
+      use std::{env, ffi::CString, os::raw::{c_char, c_int}, os::unix::ffi::OsStrExt};
+
+      unsafe extern "C" {
+          fn Py_BytesMain(argc: c_int, argv: *mut *mut c_char) -> c_int;
+      }
+
+      fn main() {
+          let mut args = vec![
+              CString::new("#{opt_libexec}/venv/bin/python").unwrap(),
+              CString::new("#{opt_libexec}/claude_bar.py").unwrap(),
+          ];
+          for arg in env::args_os().skip(1) {
+              let Ok(arg) = CString::new(arg.as_bytes()) else { std::process::exit(2) };
+              args.push(arg);
+          }
+          let mut argv: Vec<*mut c_char> = args.iter().map(|a| a.as_ptr().cast_mut()).collect();
+          let argc = argv.len() as c_int;
+          argv.push(std::ptr::null_mut());
+          let status = unsafe { Py_BytesMain(argc, argv.as_mut_ptr()) };
+          std::process::exit(status);
+      }
+    RUST
+    python_framework = Formula["python@3.12"].opt_frameworks/"Python.framework/Versions/3.12/Python"
+    system rustc, "--edition=2024", "-C", "opt-level=s", "-C", "strip=symbols",
+           "-C", "link-arg=#{python_framework}", "launcher.rs",
+           "-o", contents/"MacOS/AIQuotaBar"
+    (contents/"Info.plist").write <<~XML
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0"><dict>
+        <key>CFBundleName</key><string>AIQuotaBar</string>
+        <key>CFBundleDisplayName</key><string>AIQuotaBar</string>
+        <key>CFBundleIdentifier</key><string>com.yagcioglutoprak.aiquotabar</string>
+        <key>CFBundleExecutable</key><string>AIQuotaBar</string>
+        <key>CFBundlePackageType</key><string>APPL</string>
+        <key>CFBundleShortVersionString</key><string>#{version}</string>
+        <key>CFBundleVersion</key><string>#{revision}</string>
+        <key>LSMinimumSystemVersion</key><string>14.0</string>
+        <key>LSUIElement</key><true/>
+        <key>NSHighResolutionCapable</key><true/>
+        <key>CFBundleIconFile</key><string>AIQuotaBar.icns</string>
+      </dict></plist>
+    XML
+    iconset = buildpath/"AIQuotaBar.iconset"
+    iconset.mkpath
+    icon = resource("app-icon")
+    icon.verify_download_integrity(icon.cached_download)
+    icon_source = buildpath/"logo.png"
+    cp icon.cached_download, icon_source
+    [16, 32, 128, 256, 512].each do |size|
+      [1, 2].each do |scale|
+        suffix = scale == 2 ? "@2x" : ""
+        system "/usr/bin/sips", "-z", (size * scale).to_s, (size * scale).to_s,
+               icon_source, "--out", iconset/"icon_#{size}x#{size}#{suffix}.png"
+      end
+    end
+    system "/usr/bin/iconutil", "-c", "icns", iconset, "-o", contents/"Resources/AIQuotaBar.icns"
+    system "/usr/bin/codesign", "--force", "--sign", "-", app
   end
 
   def caveats
     <<~EOS
       AIQuotaBar is a macOS menu bar app. Launch it with:
         aiquotabar &
+
+      To install the Applications bundle, install this tap's aiquotabar-app cask.
 
       To run it at login, click the ◆ icon in your menu bar → Launch at Login.
 
